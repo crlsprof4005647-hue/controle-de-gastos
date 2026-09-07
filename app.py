@@ -16,6 +16,37 @@ cor_de_fundo = """
 """
 st.markdown(cor_de_fundo, unsafe_allow_html=True)
 
+# NOVO: O SISTEMA DE LOGIN (O Leão de Chácara)
+# ==========================================
+
+# 1. Iniciando a memória: Se a palavra "autenticado" não existir na memória, crie ela como Falso.
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+
+# 2. A Tela da Barreira
+if not st.session_state["autenticado"]:
+    st.title("🔒 Acesso Restrito")
+    
+    # Criamos um formulário só para o login
+    with st.form("form_login"):
+        email = st.text_input("E-mail")
+        senha = st.text_input("Senha", type="password") # type="password" transforma o texto em bolinhas
+        botao_entrar = st.form_submit_button("Entrar")
+
+    if botao_entrar:
+        # A. Puxamos a lista de senhas lá do secrets.toml
+        senhas_salvas = st.secrets["senhas"]
+        
+        # B. Checamos se o email digitado existe lá e se a senha digitada bate com a salva
+        if email in senhas_salvas and senhas_salvas[email] == senha:
+            st.session_state["autenticado"] = True # Mudamos a memória para Verdadeiro
+            st.rerun() # Recarregamos a página
+        else:
+            st.error("E-mail ou senha incorretos!")
+    
+    # 3. O comando mais importante da segurança:
+    st.stop()
+
 # 3. Título do App
 st.title("💲 Meu Controle Financeiro")
 st.write("Bem-vindo ao seu aplicativo. Aqui vamos construir o painel.")
