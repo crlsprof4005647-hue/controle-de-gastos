@@ -3,8 +3,11 @@ import pandas as pd
 import datetime 
 from streamlit_gsheets import GSheetsConnection
 
-# 1. Configuração inicial da página
+# ==========================================
+# 1. CONFIGURAÇÃO INICIAL DA PÁGINA
+# ==========================================
 st.set_page_config(page_title="Controle Financeiro", layout="wide")
+
 
 # ==========================================
 # 2. CUSTOMIZAÇÃO DE LAYOUT (Fundo e Cores)
@@ -25,6 +28,15 @@ if not st.session_state["autenticado"]:
         /* Força todos os textos a ficarem brancos */
         h1, h2, h3, p, label, .stMarkdown {
             color: #FFFFFF !important;
+        }
+        /* Pinta o botão de login de azul vibrante para não sumir */
+        div.stButton > button, div[data-testid="stFormSubmitButton"] > button {
+            background-color: #2563EB !important;
+            color: #FFFFFF !important;
+            border: none !important;
+        }
+        div.stButton > button:hover, div[data-testid="stFormSubmitButton"] > button:hover {
+            background-color: #1D4ED8 !important;
         }
     </style>
     """
@@ -109,7 +121,7 @@ with st.form(key="form_nova_transacao", clear_on_submit=True):
             "Categoria",
             ["Alimentação", "Luz", "Água", "Internet", "Financiamento Casa", "Salário", "Lazer", "Outros"]
         )
-        # Inserimos a lista dinâmica aqui:
+        # A lista de contas dinâmica entra aqui:
         conta_input = st.selectbox("Conta_Origem", lista_de_contas)
         
         status_input = st.selectbox("Status", ["Pago", "Pendente"])
