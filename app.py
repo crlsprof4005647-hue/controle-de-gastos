@@ -48,21 +48,21 @@ else:
             background-color: #1D4ED8 !important;
         }
         
-        /* Consertando Inputs e Selectbox para não ficarem brancos invisíveis */
+        /* Consertando Inputs e Selectbox */
         div[data-baseweb="select"] > div, input, div[data-baseweb="base-input"] {
             background-color: #334155 !important;
             color: #FFFFFF !important;
             border-color: #475569 !important;
         }
         
-        /* Consertando as Abas (Tabs) para aparecerem sempre */
+        /* Consertando as Abas (Tabs) */
         button[data-baseweb="tab"] {
             background-color: transparent !important;
-            color: #94A3B8 !important; /* Cinza claro quando não selecionado */
+            color: #94A3B8 !important; 
         }
         button[data-baseweb="tab"][aria-selected="true"] {
-            color: #FFFFFF !important; /* Branco quando selecionado */
-            border-bottom-color: #2563EB !important; /* Linha azul */
+            color: #FFFFFF !important; 
+            border-bottom-color: #2563EB !important; 
         }
     </style>
     """
@@ -154,16 +154,11 @@ with aba_lancamentos:
     pendentes = dados_atuais[dados_atuais["Status"] == "Pendente"]
 
     if not pendentes.empty:
-        # NOVIDADE: Adicionado a Conta_Origem na visualização da pendência
         opcoes = (
             pendentes["ID"].astype(int).astype(str) 
-            + " - " 
-            + pendentes["Descricao"] 
-            + " | "
-            + pendentes["Conta_Origem"]
-            + " (R$ " 
-            + pendentes["Valor"].astype(str) 
-            + ")"
+            + " - " + pendentes["Descricao"] 
+            + " | " + pendentes["Conta_Origem"]
+            + " (R$ " + pendentes["Valor"].astype(str) + ")"
         )
         col_baixa1, col_baixa2 = st.columns([3, 1]) 
         with col_baixa1:
@@ -188,15 +183,12 @@ with aba_lancamentos:
     st.subheader("📊 Histórico de Transações")
     st.write("💡 Dê um duplo clique em qualquer célula para editar.")
     
-    # NOVIDADE: Criamos uma cópia que substitui _ por espaço apenas para mostrar na tela
     dados_exibicao = dados_atuais.rename(columns=lambda x: x.replace("_", " "))
-    
     dados_editados = st.data_editor(dados_exibicao, use_container_width=True, hide_index=True, key="editor_tabela")
 
     if not dados_exibicao.equals(dados_editados):
         st.warning("⚠️ Você fez alterações na tabela. Clique abaixo para confirmar.")
         if st.button("💾 Salvar Alterações no Banco"):
-            # NOVIDADE: Colocamos os underlines de volta antes de salvar no banco
             dados_para_salvar = dados_editados.rename(columns=lambda x: x.replace(" ", "_"))
             conn.update(worksheet=st.session_state["aba_usuario"], data=dados_para_salvar)
             st.success("Alterações salvas com sucesso!")
@@ -226,14 +218,22 @@ with aba_relatorios:
         
         resumo_melted = resumo_mes.reset_index().melt(id_vars="Mes_Ano", value_vars=["Entrada", "Saída", "Diferença"], var_name="Tipo", value_name="Valor")
         
-        grafico_balanco = alt.Chart(resumo_melted).mark_bar().encode(
-            x=alt.X('Mes_Ano:N', title='Mês', axis=alt.Axis(labelAngle=0, labelColor='white', titleColor='white')),
-            y=alt.Y('Valor:Q', title='Valor (R$)', axis=alt.Axis(labelColor='white', titleColor='white')),
+        # Base do gráfico (Sem linhas de grade com grid=False)
+        base_balanco = alt.Chart(resumo_melted).encode(
+            x=alt.X('Mes_Ano:N', title='Mês', axis=alt.Axis(labelAngle=0, labelColor='white', titleColor='white', grid=False)),
+            y=alt.Y('Valor:Q', title='Valor (R$)', axis=alt.Axis(labelColor='white', titleColor='white', grid=False, labels=False)), # Esconde os números do eixo Y para ficar mais limpo
             color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Entrada', 'Saída', 'Diferença'], range=['#10B981', '#EF4444', '#3B82F6']), legend=alt.Legend(labelColor='white', titleColor='white')),
             xOffset='Tipo:N',
             tooltip=['Mes_Ano', 'Tipo', 'Valor']
-        ).configure_view(strokeOpacity=0).configure(background='transparent').properties(height=350)
+        )
         
+        # Camada de barras + Camada de Textos
+        barras_balanco = base_balanco.mark_bar()
+        textos_balanco = base_balanco.mark_text(align='center', baseline='bottom', dy=-5, color='white', fontWeight='bold').encode(
+            text=alt.Text('Valor:Q', format='.2f')
+        )
+        
+        grafico_balanco = alt.layer(barras_balanco, textos_balanco).configure_view(strokeOpacity=0).configure(background='transparent').properties(height=350)
         st.altair_chart(grafico_balanco, use_container_width=True, theme=None)
         
         st.divider()
@@ -248,22 +248,38 @@ with aba_relatorios:
             with col_rosca1:
                 st.markdown("**Por Categoria**")
                 gastos_cat = saidas.groupby("Categoria")["Valor"].sum().reset_index()
-                rosca_cat = alt.Chart(gastos_cat).mark_arc(innerRadius=50).encode(
+                
+                base_cat = alt.Chart(gastos_cat).encode(
                     theta=alt.Theta(field="Valor", type="quantitative"),
                     color=alt.Color(field="Categoria", type="nominal", legend=alt.Legend(labelColor='white', titleColor='white')),
                     tooltip=["Categoria", "Valor"]
-                ).configure_view(strokeOpacity=0).configure(background='transparent').properties(height=300)
-                st.altair_chart(rosca_cat, use_container_width=True, theme=None)
+                )
+                
+                rosca_cat = base_cat.mark_arc(innerRadius=50)
+                texto_cat = base_cat.mark_text(radius=80, color='white', fontWeight='bold', size=11).encode(
+                    text=alt.Text('Valor:Q', format='.2f')
+                )
+                
+                grafico_cat_final = alt.layer(rosca_cat, texto_cat).configure_view(strokeOpacity=0).configure(background='transparent').properties(height=300)
+                st.altair_chart(grafico_cat_final, use_container_width=True, theme=None)
                 
             with col_rosca2:
                 st.markdown("**Por Conta (Origem)**")
                 gastos_conta_rosca = saidas.groupby("Conta_Origem")["Valor"].sum().reset_index()
-                rosca_conta = alt.Chart(gastos_conta_rosca).mark_arc(innerRadius=50).encode(
+                
+                base_conta = alt.Chart(gastos_conta_rosca).encode(
                     theta=alt.Theta(field="Valor", type="quantitative"),
                     color=alt.Color(field="Conta_Origem", type="nominal", legend=alt.Legend(labelColor='white', titleColor='white')),
                     tooltip=["Conta_Origem", "Valor"]
-                ).configure_view(strokeOpacity=0).configure(background='transparent').properties(height=300)
-                st.altair_chart(rosca_conta, use_container_width=True, theme=None)
+                )
+                
+                rosca_conta = base_conta.mark_arc(innerRadius=50)
+                texto_conta = base_conta.mark_text(radius=80, color='white', fontWeight='bold', size=11).encode(
+                    text=alt.Text('Valor:Q', format='.2f')
+                )
+                
+                grafico_conta_final = alt.layer(rosca_conta, texto_conta).configure_view(strokeOpacity=0).configure(background='transparent').properties(height=300)
+                st.altair_chart(grafico_conta_final, use_container_width=True, theme=None)
                 
             st.divider()
             
@@ -272,15 +288,22 @@ with aba_relatorios:
             
             evolucao_contas = saidas.groupby(["Mes_Ano", "Conta_Origem"])["Valor"].sum().reset_index()
             
-            grafico_contas = alt.Chart(evolucao_contas).mark_bar().encode(
-                x=alt.X('Mes_Ano:N', title='Mês', axis=alt.Axis(labelAngle=0, labelColor='white', titleColor='white')),
-                y=alt.Y('Valor:Q', title='Gasto (R$)', axis=alt.Axis(labelColor='white', titleColor='white')),
+            base_contas = alt.Chart(evolucao_contas).encode(
+                x=alt.X('Mes_Ano:N', title='Mês', axis=alt.Axis(labelAngle=0, labelColor='white', titleColor='white', grid=False)),
+                y=alt.Y('Valor:Q', title='Gasto (R$)', axis=alt.Axis(labelColor='white', titleColor='white', grid=False, labels=False)), # Esconde eixo Y
                 color=alt.Color('Conta_Origem:N', legend=alt.Legend(labelColor='white', titleColor='white')),
                 xOffset='Conta_Origem:N',
                 tooltip=['Mes_Ano', 'Conta_Origem', 'Valor']
-            ).configure_view(strokeOpacity=0).configure(background='transparent').properties(height=350)
+            )
             
-            st.altair_chart(grafico_contas, use_container_width=True, theme=None)
+            barras_contas = base_contas.mark_bar()
+            textos_contas = base_contas.mark_text(align='center', baseline='bottom', dy=-5, color='white', fontWeight='bold').encode(
+                text=alt.Text('Valor:Q', format='.2f')
+            )
+            
+            grafico_contas_final = alt.layer(barras_contas, textos_contas).configure_view(strokeOpacity=0).configure(background='transparent').properties(height=350)
+            
+            st.altair_chart(grafico_contas_final, use_container_width=True, theme=None)
             
         else:
             st.info("Nenhuma despesa (Saída) registrada para gerar os relatórios detalhados.")
