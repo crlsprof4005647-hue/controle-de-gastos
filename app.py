@@ -6,15 +6,50 @@ from streamlit_gsheets import GSheetsConnection
 # 1. Configuração inicial da página
 st.set_page_config(page_title="Controle Financeiro", layout="wide")
 
-# 2. Customização do fundo 
-cor_de_fundo = """
-<style>
-    .stApp {
-        background-color: #FFFFFF; 
-    }
-</style>
-"""
+# ==========================================
+# 2. CUSTOMIZAÇÃO DE LAYOUT (Fundo e Cores)
+# ==========================================
+
+# Primeiro, precisamos iniciar a memória ANTES de pintar a tela
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+
+# Se a pessoa NÃO estiver logada (Tela de Login):
+if not st.session_state["autenticado"]:
+    cor_de_fundo = """
+    <style>
+        /* Pinta o fundo da tela com o azul escuro que você escolheu */
+        .stApp {
+            background-color: #0F172A; 
+        }
+        /* Força todos os textos (títulos, parágrafos e nomes dos campos) a ficarem brancos */
+        h1, h2, h3, p, label, .stMarkdown {
+            color: #FFFFFF !important;
+        }
+    </style>
+    """
+# Se a pessoa JÁ estiver logada (Dentro do App):
+else:
+    cor_de_fundo = """
+    <style>
+        .stApp {
+            background-color: #FFFFFF; /* Fundo branco para a tabela e formulário */
+        }
+    </style>
+    """
+
+# Aplica a pintura na tela
 st.markdown(cor_de_fundo, unsafe_allow_html=True)
+
+
+# ==========================================
+# O SISTEMA DE LOGIN (O Leão de Chácara)
+# ==========================================
+
+# A Tela da Barreira (só aparece se não estiver logado)
+if not st.session_state["autenticado"]:
+    st.title("🔒 Acesso Restrito")
+    # ... (o restante do código do login continua igualzinho a partir daqui)
 
 
 # ==========================================
