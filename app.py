@@ -31,7 +31,6 @@ if not st.session_state["autenticado"]:
     </style>
     """
 else:
-    # AQUI ESTÁ A CORREÇÃO DO CSS DO APP LOGADO
     cor_de_fundo = """
     <style>
         .stApp { background-color: #1E293B; }
@@ -155,7 +154,17 @@ with aba_lancamentos:
     pendentes = dados_atuais[dados_atuais["Status"] == "Pendente"]
 
     if not pendentes.empty:
-        opcoes = (pendentes["ID"].astype(int).astype(str) + " - " + pendentes["Descricao"] + " (R$ " + pendentes["Valor"].astype(str) + ")")
+        # NOVIDADE: Adicionado a Conta_Origem na visualização da pendência
+        opcoes = (
+            pendentes["ID"].astype(int).astype(str) 
+            + " - " 
+            + pendentes["Descricao"] 
+            + " | "
+            + pendentes["Conta_Origem"]
+            + " (R$ " 
+            + pendentes["Valor"].astype(str) 
+            + ")"
+        )
         col_baixa1, col_baixa2 = st.columns([3, 1]) 
         with col_baixa1:
             transacao_escolhida = st.selectbox("Selecione a transação:", opcoes)
@@ -178,12 +187,18 @@ with aba_lancamentos:
 
     st.subheader("📊 Histórico de Transações")
     st.write("💡 Dê um duplo clique em qualquer célula para editar.")
-    dados_editados = st.data_editor(dados_atuais, use_container_width=True, hide_index=True, key="editor_tabela")
+    
+    # NOVIDADE: Criamos uma cópia que substitui _ por espaço apenas para mostrar na tela
+    dados_exibicao = dados_atuais.rename(columns=lambda x: x.replace("_", " "))
+    
+    dados_editados = st.data_editor(dados_exibicao, use_container_width=True, hide_index=True, key="editor_tabela")
 
-    if not dados_atuais.equals(dados_editados):
+    if not dados_exibicao.equals(dados_editados):
         st.warning("⚠️ Você fez alterações na tabela. Clique abaixo para confirmar.")
         if st.button("💾 Salvar Alterações no Banco"):
-            conn.update(worksheet=st.session_state["aba_usuario"], data=dados_editados)
+            # NOVIDADE: Colocamos os underlines de volta antes de salvar no banco
+            dados_para_salvar = dados_editados.rename(columns=lambda x: x.replace(" ", "_"))
+            conn.update(worksheet=st.session_state["aba_usuario"], data=dados_para_salvar)
             st.success("Alterações salvas com sucesso!")
             st.rerun() 
 
@@ -209,10 +224,8 @@ with aba_relatorios:
         if "Saída" not in resumo_mes.columns: resumo_mes["Saída"] = 0
         resumo_mes["Diferença"] = resumo_mes["Entrada"] - resumo_mes["Saída"]
         
-        # Prepara a tabela para o gráfico avançado
         resumo_melted = resumo_mes.reset_index().melt(id_vars="Mes_Ano", value_vars=["Entrada", "Saída", "Diferença"], var_name="Tipo", value_name="Valor")
         
-        # Gráfico configurado com fundo transparente, eixos retos e textos brancos
         grafico_balanco = alt.Chart(resumo_melted).mark_bar().encode(
             x=alt.X('Mes_Ano:N', title='Mês', axis=alt.Axis(labelAngle=0, labelColor='white', titleColor='white')),
             y=alt.Y('Valor:Q', title='Valor (R$)', axis=alt.Axis(labelColor='white', titleColor='white')),
