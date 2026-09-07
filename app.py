@@ -1,12 +1,12 @@
 import streamlit as st
 import pandas as pd
-import datetime  # Não podemos esquecer o datetime para a data de hoje!
+import datetime 
 from streamlit_gsheets import GSheetsConnection
 
-# 1. Configuração inicial da página (SEMPRE o primeiro comando do Streamlit)
+# 1. Configuração inicial da página
 st.set_page_config(page_title="Controle Financeiro", layout="wide")
 
-# 2. Customização do fundo (Seu verde escuro ficou ótimo!)
+# 2. Customização do fundo 
 cor_de_fundo = """
 <style>
     .stApp {
@@ -16,45 +16,52 @@ cor_de_fundo = """
 """
 st.markdown(cor_de_fundo, unsafe_allow_html=True)
 
-# NOVO: O SISTEMA DE LOGIN (O Leão de Chácara)
+
+# ==========================================
+# O SISTEMA DE LOGIN (O Leão de Chácara)
 # ==========================================
 
-# 1. Iniciando a memória: Se a palavra "autenticado" não existir na memória, crie ela como Falso.
+# Iniciando a memória do usuário
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
 
-# 2. A Tela da Barreira
+# A Tela da Barreira (só aparece se não estiver logado)
 if not st.session_state["autenticado"]:
     st.title("🔒 Acesso Restrito")
     
-    # Criamos um formulário só para o login
     with st.form("form_login"):
         email = st.text_input("E-mail")
-        senha = st.text_input("Senha", type="password") # type="password" transforma o texto em bolinhas
+        senha = st.text_input("Senha", type="password") 
         botao_entrar = st.form_submit_button("Entrar")
 
     if botao_entrar:
-        # A. Puxamos a lista de senhas lá do secrets.toml
         senhas_salvas = st.secrets["senhas"]
         
-        # B. Checamos se o email digitado existe lá e se a senha digitada bate com a salva
+        # Checa se o email existe e se a senha está correta
         if email in senhas_salvas and senhas_salvas[email] == senha:
-            st.session_state["autenticado"] = True # Mudamos a memória para Verdadeiro
-            st.rerun() # Recarregamos a página
+            st.session_state["autenticado"] = True 
+            
+            # Busca no cofre qual é a aba desse usuário e salva na memória!
+            st.session_state["aba_usuario"] = st.secrets["ambientes"][email]
+            
+            st.rerun() # Recarrega a página para sumir o login
         else:
             st.error("E-mail ou senha incorretos!")
     
-    # 3. O comando mais importante da segurança:
-    st.stop()
+    st.stop() # Bloqueia o carregamento do resto do site!
 
-# 3. Título do App
+
+# ==========================================
+# ÁREA LOGADA (O APLICATIVO FINANCEIRO)
+# ==========================================
+
 st.title("💲 Meu Controle Financeiro")
-st.write("Bem-vindo ao seu aplicativo. Aqui vamos construir o painel.")
+st.write(f"Bem-vindo(a)! Você está acessando a base de dados: **{st.session_state['aba_usuario']}**")
 
-# 4. Criando a Conexão
+# Criando a Conexão
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 5. O Formulário (Onde as informações nascem)
+# --- 1. O FORMULÁRIO DE ENTRADA ---
 st.subheader("📝 Adicionar Nova Transação")
 
 with st.form(key="form_nova_transacao", clear_on_submit=True):
@@ -62,101 +69,65 @@ with st.form(key="form_nova_transacao", clear_on_submit=True):
 
     with coluna1:
         data_input = st.date_input("Data", datetime.date.today())
-        descricao_input = st.text_input(
-            "Descrição", placeholder="Ex: Compra no Mercado..."
-        )
+        descricao_input = st.text_input("Descrição", placeholder="Ex: Compra no Mercado...")
         valor_input = st.number_input("Valor (R$)", min_value=0.0, format="%.2f")
         tipo_input = st.selectbox("Tipo", ["Saída", "Entrada"])
 
     with coluna2:
         categoria_input = st.selectbox(
             "Categoria",
-            [
-                "Alimentação",
-                "Luz",
-                "Água",
-                "Internet",
-                "Financiamento Casa",
-                "Salário",
-                "Lazer",
-                "Outros",
-            ],
+            ["Alimentação", "Luz", "Água", "Internet", "Financiamento Casa", "Salário", "Lazer", "Outros"]
         )
         conta_input = st.selectbox(
             "Conta_Origem",
-            ["Cartão Nubank Carlos", "Cartão Nubank Regiane", "Dinheiro/Débito ou PIX"],
+            ["Cartão Nubank Carlos", "Cartão Nubank Regiane", "Dinheiro/Débito ou PIX"]
         )
         status_input = st.selectbox("Status", ["Pago", "Pendente"])
-        recorrencia_input = st.selectbox(
-            "Recorrência", ["Único", "Fixo Mensal", "Parcelado"]
-        )
+        recorrencia_input = st.selectbox("Recorrência", ["Único", "Fixo Mensal", "Parcelado"])
 
-    # O botão nasce AQUI
     botao_salvar = st.form_submit_button("Salvar Transação")
 
-# 6. A Lógica de Envio (Agora sim, o Python sabe quem é o 'botao_salvar' e as variáveis)
+# Lógica de Salvar a Transação
 if botao_salvar:
-    # Passo A: Ler o que já existe
-    dados_existentes = conn.read(worksheet="Transacoes", usecols=list(range(10)))
+    # LUGAR 1: Lê a aba dinâmica do usuário logado
+    dados_existentes = conn.read(worksheet=st.session_state["aba_usuario"], usecols=list(range(10)))
 
-    # Passo B: Criar o ID
     novo_id = len(dados_existentes) + 1
 
-    # Passo C: Empacotar os dados digitados
-    nova_linha = pd.DataFrame(
-        [
-            {
-                "ID": novo_id,
-                "Data": data_input.strftime("%d/%m/%Y"),
-                "Descricao": descricao_input,
-                "Valor": valor_input,
-                "Tipo": tipo_input,
-                "Categoria": categoria_input,
-                "Conta_Origem": conta_input,
-                "Status": status_input,
-                "Recorrencia": recorrencia_input,
-                "Data_Baixa": (
-                    datetime.date.today().strftime("%d/%m/%Y")
-                    if status_input == "Pago"
-                    else ""
-                ),
-            }
-        ]
-    )
+    nova_linha = pd.DataFrame([{
+        "ID": novo_id,
+        "Data": data_input.strftime("%d/%m/%Y"),
+        "Descricao": descricao_input,
+        "Valor": valor_input,
+        "Tipo": tipo_input,
+        "Categoria": categoria_input,
+        "Conta_Origem": conta_input,
+        "Status": status_input,
+        "Recorrencia": recorrencia_input,
+        "Data_Baixa": datetime.date.today().strftime("%d/%m/%Y") if status_input == "Pago" else "",
+    }])
 
-    # Passo D: Juntar antigo com novo
     dados_atualizados = pd.concat([dados_existentes, nova_linha], ignore_index=True)
 
-    # Passo E: Atualizar no Google Sheets
-    conn.update(worksheet="Transacoes", data=dados_atualizados)
+    # LUGAR 2: Salva na aba dinâmica do usuário logado
+    conn.update(worksheet=st.session_state["aba_usuario"], data=dados_atualizados)
+    st.success(f"Transação '{descricao_input}' salva com sucesso!")
 
-    st.success(f"Transação '{descricao_input}' salva com sucesso no banco de dados!")
 
-
-# --- DIVISOR VISUAL ---
 st.divider()
 
-st.subheader("📊 Histórico de Transações")
+# --- 2. PAINEL DE DAR BAIXA ---
+# LUGAR 3: Lê os dados atualizados da aba dinâmica do usuário
+dados_atuais = conn.read(worksheet=st.session_state["aba_usuario"], usecols=list(range(10)), ttl=0)
 
-# O ttl=0 garante que os dados sejam sempre os mais recentes
-dados_atuais = conn.read(worksheet="Transacoes", usecols=list(range(10)), ttl=0)
-
-# ==========================================
-# NOVO PAINEL: DAR BAIXA EM PAGAMENTOS
-# ==========================================
 st.subheader("✅ Dar Baixa em Pagamentos Pendentes")
 
-# 1. Filtramos a tabela original para pegar SÓ as linhas onde o Status é "Pendente"
 pendentes = dados_atuais[dados_atuais["Status"] == "Pendente"]
 
-# 2. Se a tabela de pendentes não estiver vazia, mostramos o painel
 if not pendentes.empty:
-
-    # 3. Criamos uma lista de texto amigável. Ex: "1 - Mercado (R$ 150.0)"
-    # Antes
-    # Depois
+    # A correção mágica do astype duplo para evitar o erro do Pandas
     opcoes = (
-        pendentes["ID"].astype(int).astype(str)  # <-- A MÁGICA ESTÁ AQUI
+        pendentes["ID"].astype(int).astype(str)
         + " - "
         + pendentes["Descricao"]
         + " (R$ "
@@ -164,58 +135,49 @@ if not pendentes.empty:
         + ")"
     )
 
-    # 4. Dividimos a tela para o Selectbox e o Botão ficarem lado a lado
-    col_baixa1, col_baixa2 = st.columns([3, 1])  # A coluna 1 é 3x maior que a coluna 2
+    col_baixa1, col_baixa2 = st.columns([3, 1]) 
 
     with col_baixa1:
         transacao_escolhida = st.selectbox("Selecione a transação:", opcoes)
 
     with col_baixa2:
-        st.write("")  # Pula uma linha fantasma...
-        st.write(
-            ""
-        )  # ...para empurrar o botão para baixo e alinhar com a caixa de texto
+        st.write("") 
+        st.write("") 
         botao_baixa = st.button("Dar Baixa")
 
-    # 5. O que acontece quando clica no botão?
     if botao_baixa:
-        # Depois (adicionamos o float no meio)
+        # A correção com o float para aceitar '1.0' caso venha assim do Sheets
         id_escolhido = int(float(transacao_escolhida.split(" - ")[0]))
 
-        # B. Encontramos qual é a posição (índice) exata desse ID dentro da tabela inteira do Google Sheets
         indice = dados_atuais.index[dados_atuais["ID"] == id_escolhido][0]
 
-        # C. Alteramos a célula do Status e a célula da Data da Baixa
         dados_atuais.at[indice, "Status"] = "Pago"
-        dados_atuais.at[indice, "Data_Baixa"] = datetime.date.today().strftime(
-            "%d/%m/%Y"
-        )
+        dados_atuais.at[indice, "Data_Baixa"] = datetime.date.today().strftime("%d/%m/%Y")
 
-        # D. Substituímos a planilha pela nossa versão alterada
-        conn.update(worksheet="Transacoes", data=dados_atuais)
+        # LUGAR 4: Atualiza a aba dinâmica
+        conn.update(worksheet=st.session_state["aba_usuario"], data=dados_atuais)
         st.success("Pagamento baixado com sucesso!")
         st.rerun()
 else:
-    # Se a tabela de pendentes estiver vazia (tudo pago):
     st.info("Nenhum pagamento pendente! Tudo em dia. 🎉")
 
+
 st.divider()
-# AQUI EMBAIXO CONTINUA O SEU CÓDIGO DA TABELA (st.data_editor...)
 
-st.write(
-    "💡 Dê um duplo clique em qualquer célula para editar (ex: mude o Status para Pago)."
-)
 
-# 8. O Editor de Dados (Substitui o st.dataframe antigo)
+# --- 3. TABELA DE EDIÇÃO LIVRE ---
+st.subheader("📊 Histórico de Transações")
+st.write("💡 Dê um duplo clique em qualquer célula para editar.")
+
 dados_editados = st.data_editor(
     dados_atuais, use_container_width=True, hide_index=True, key="editor_tabela"
 )
 
-# 9. A Lógica de Atualização no Banco de Dados
 if not dados_atuais.equals(dados_editados):
     st.warning("⚠️ Você fez alterações na tabela. Clique abaixo para confirmar.")
 
     if st.button("💾 Salvar Alterações no Banco"):
-        conn.update(worksheet="Transacoes", data=dados_editados)
+        # LUGAR 5: Atualiza a aba dinâmica se o usuário editar algo solto
+        conn.update(worksheet=st.session_state["aba_usuario"], data=dados_editados)
         st.success("Alterações salvas com sucesso!")
-        st.rerun()  # Recarrega a tela para limpar o aviso
+        st.rerun()
