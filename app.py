@@ -18,11 +18,11 @@ if "autenticado" not in st.session_state:
 if not st.session_state["autenticado"]:
     cor_de_fundo = """
     <style>
-        /* Pinta o fundo da tela com o azul escuro que você escolheu */
+        /* Pinta o fundo da tela com o azul escuro */
         .stApp {
             background-color: #0F172A; 
         }
-        /* Força todos os textos (títulos, parágrafos e nomes dos campos) a ficarem brancos */
+        /* Força todos os textos a ficarem brancos */
         h1, h2, h3, p, label, .stMarkdown {
             color: #FFFFFF !important;
         }
@@ -43,12 +43,8 @@ st.markdown(cor_de_fundo, unsafe_allow_html=True)
 
 
 # ==========================================
-# O SISTEMA DE LOGIN (O Leão de Chácara)
+# 3. O SISTEMA DE LOGIN (O Leão de Chácara)
 # ==========================================
-
-# Iniciando a memória do usuário
-if "autenticado" not in st.session_state:
-    st.session_state["autenticado"] = False
 
 # A Tela da Barreira (só aparece se não estiver logado)
 if not st.session_state["autenticado"]:
@@ -77,7 +73,7 @@ if not st.session_state["autenticado"]:
 
 
 # ==========================================
-# ÁREA LOGADA (O APLICATIVO FINANCEIRO)
+# 4. ÁREA LOGADA (O APLICATIVO FINANCEIRO)
 # ==========================================
 
 st.title("💲 Meu Controle Financeiro")
@@ -86,7 +82,17 @@ st.write(f"Bem-vindo(a)! Você está acessando a base de dados: **{st.session_st
 # Criando a Conexão
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- 1. O FORMULÁRIO DE ENTRADA ---
+
+# --- LÓGICA DAS CONTAS DINÂMICAS ---
+# O Python checa qual aba está na memória para decidir quais contas mostrar
+if st.session_state["aba_usuario"] == "Transacao":
+    lista_de_contas = ["Cartão Nubank Carlos", "Cartão Nubank Regiane", "Dinheiro/Débito ou PIX"]
+else:
+    # Opções que vão aparecer para o seu irmão (aba Transacao_1)
+    lista_de_contas = ["Cartão de Crédito", "Conta Corrente", "Dinheiro/PIX"]
+
+
+# --- O FORMULÁRIO DE ENTRADA ---
 st.subheader("📝 Adicionar Nova Transação")
 
 with st.form(key="form_nova_transacao", clear_on_submit=True):
@@ -103,10 +109,9 @@ with st.form(key="form_nova_transacao", clear_on_submit=True):
             "Categoria",
             ["Alimentação", "Luz", "Água", "Internet", "Financiamento Casa", "Salário", "Lazer", "Outros"]
         )
-        conta_input = st.selectbox(
-            "Conta_Origem",
-            ["Cartão Nubank Carlos", "Cartão Nubank Regiane", "Dinheiro/Débito ou PIX"]
-        )
+        # Inserimos a lista dinâmica aqui:
+        conta_input = st.selectbox("Conta_Origem", lista_de_contas)
+        
         status_input = st.selectbox("Status", ["Pago", "Pendente"])
         recorrencia_input = st.selectbox("Recorrência", ["Único", "Fixo Mensal", "Parcelado"])
 
@@ -114,7 +119,6 @@ with st.form(key="form_nova_transacao", clear_on_submit=True):
 
 # Lógica de Salvar a Transação
 if botao_salvar:
-    # LUGAR 1: Lê a aba dinâmica do usuário logado
     dados_existentes = conn.read(worksheet=st.session_state["aba_usuario"], usecols=list(range(10)))
 
     novo_id = len(dados_existentes) + 1
@@ -134,15 +138,13 @@ if botao_salvar:
 
     dados_atualizados = pd.concat([dados_existentes, nova_linha], ignore_index=True)
 
-    # LUGAR 2: Salva na aba dinâmica do usuário logado
     conn.update(worksheet=st.session_state["aba_usuario"], data=dados_atualizados)
     st.success(f"Transação '{descricao_input}' salva com sucesso!")
 
 
 st.divider()
 
-# --- 2. PAINEL DE DAR BAIXA ---
-# LUGAR 3: Lê os dados atualizados da aba dinâmica do usuário
+# --- PAINEL DE DAR BAIXA ---
 dados_atuais = conn.read(worksheet=st.session_state["aba_usuario"], usecols=list(range(10)), ttl=0)
 
 st.subheader("✅ Dar Baixa em Pagamentos Pendentes")
@@ -150,7 +152,6 @@ st.subheader("✅ Dar Baixa em Pagamentos Pendentes")
 pendentes = dados_atuais[dados_atuais["Status"] == "Pendente"]
 
 if not pendentes.empty:
-    # A correção mágica do astype duplo para evitar o erro do Pandas
     opcoes = (
         pendentes["ID"].astype(int).astype(str)
         + " - "
@@ -171,7 +172,6 @@ if not pendentes.empty:
         botao_baixa = st.button("Dar Baixa")
 
     if botao_baixa:
-        # A correção com o float para aceitar '1.0' caso venha assim do Sheets
         id_escolhido = int(float(transacao_escolhida.split(" - ")[0]))
 
         indice = dados_atuais.index[dados_atuais["ID"] == id_escolhido][0]
@@ -179,7 +179,6 @@ if not pendentes.empty:
         dados_atuais.at[indice, "Status"] = "Pago"
         dados_atuais.at[indice, "Data_Baixa"] = datetime.date.today().strftime("%d/%m/%Y")
 
-        # LUGAR 4: Atualiza a aba dinâmica
         conn.update(worksheet=st.session_state["aba_usuario"], data=dados_atuais)
         st.success("Pagamento baixado com sucesso!")
         st.rerun()
@@ -189,8 +188,7 @@ else:
 
 st.divider()
 
-
-# --- 3. TABELA DE EDIÇÃO LIVRE ---
+# --- TABELA DE EDIÇÃO LIVRE ---
 st.subheader("📊 Histórico de Transações")
 st.write("💡 Dê um duplo clique em qualquer célula para editar.")
 
@@ -202,7 +200,6 @@ if not dados_atuais.equals(dados_editados):
     st.warning("⚠️ Você fez alterações na tabela. Clique abaixo para confirmar.")
 
     if st.button("💾 Salvar Alterações no Banco"):
-        # LUGAR 5: Atualiza a aba dinâmica se o usuário editar algo solto
         conn.update(worksheet=st.session_state["aba_usuario"], data=dados_editados)
         st.success("Alterações salvas com sucesso!")
         st.rerun()
