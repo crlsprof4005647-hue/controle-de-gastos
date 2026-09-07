@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import datetime 
+import altair as alt  # A biblioteca mágica de gráficos
 from streamlit_gsheets import GSheetsConnection
 
 # ==========================================
@@ -8,28 +9,17 @@ from streamlit_gsheets import GSheetsConnection
 # ==========================================
 st.set_page_config(page_title="Controle Financeiro", layout="wide")
 
-
 # ==========================================
 # 2. CUSTOMIZAÇÃO DE LAYOUT (Fundo e Cores)
 # ==========================================
-
-# Primeiro, precisamos iniciar a memória ANTES de pintar a tela
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
 
-# Se a pessoa NÃO estiver logada (Tela de Login):
 if not st.session_state["autenticado"]:
     cor_de_fundo = """
     <style>
-        /* Pinta o fundo da tela com o azul escuro */
-        .stApp {
-            background-color: #0F172A; 
-        }
-        /* Força todos os textos a ficarem brancos */
-        h1, h2, h3, p, label, .stMarkdown {
-            color: #FFFFFF !important;
-        }
-        /* Pinta o botão de login de azul vibrante para não sumir */
+        .stApp { background-color: #0F172A; }
+        h1, h2, h3, p, label, .stMarkdown { color: #FFFFFF !important; }
         div.stButton > button, div[data-testid="stFormSubmitButton"] > button {
             background-color: #2563EB !important;
             color: #FFFFFF !important;
@@ -40,25 +30,18 @@ if not st.session_state["autenticado"]:
         }
     </style>
     """
-# Se a pessoa JÁ estiver logada (Dentro do App):
 else:
     cor_de_fundo = """
     <style>
-        .stApp {
-            background-color: #FFFFFF; /* Fundo branco para a tabela e formulário */
-        }
+        .stApp { background-color: #1E293B; }
+        h1, h2, h3, p, label, .stMarkdown, .stTab { color: #FFFFFF !important; }
     </style>
     """
-
-# Aplica a pintura na tela
 st.markdown(cor_de_fundo, unsafe_allow_html=True)
 
-
 # ==========================================
-# 3. O SISTEMA DE LOGIN (O Leão de Chácara)
+# 3. O SISTEMA DE LOGIN 
 # ==========================================
-
-# A Tela da Barreira (só aparece se não estiver logado)
 if not st.session_state["autenticado"]:
     st.title("🔒 Acesso Restrito")
     
@@ -69,149 +52,195 @@ if not st.session_state["autenticado"]:
 
     if botao_entrar:
         senhas_salvas = st.secrets["senhas"]
-        
-        # Checa se o email existe e se a senha está correta
         if email in senhas_salvas and senhas_salvas[email] == senha:
             st.session_state["autenticado"] = True 
-            
-            # Busca no cofre qual é a aba desse usuário e salva na memória!
             st.session_state["aba_usuario"] = st.secrets["ambientes"][email]
-            
-            st.rerun() # Recarrega a página para sumir o login
+            st.rerun() 
         else:
             st.error("E-mail ou senha incorretos!")
     
-    st.stop() # Bloqueia o carregamento do resto do site!
+    st.stop() 
 
 
 # ==========================================
 # 4. ÁREA LOGADA (O APLICATIVO FINANCEIRO)
 # ==========================================
-
 st.title("💲 Meu Controle Financeiro")
-st.write(f"Bem-vindo(a)! Você está acessando a base de dados: **{st.session_state['aba_usuario']}**")
+st.write(f"Bem-vindo(a)! Base de dados ativa: **{st.session_state['aba_usuario']}**")
 
-# Criando a Conexão
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-
-# --- LÓGICA DAS CONTAS DINÂMICAS ---
-# O Python checa qual aba está na memória para decidir quais contas mostrar
-if st.session_state["aba_usuario"] == "Transacao":
-    lista_de_contas = ["Cartão Nubank Carlos", "Cartão Nubank Regiane", "Dinheiro/Débito ou PIX"]
-else:
-    # Opções que vão aparecer para o seu irmão (aba Transacao_1)
-    lista_de_contas = ["Cartão de Crédito", "Conta Corrente", "Dinheiro/PIX"]
-
-
-# --- O FORMULÁRIO DE ENTRADA ---
-st.subheader("📝 Adicionar Nova Transação")
-
-with st.form(key="form_nova_transacao", clear_on_submit=True):
-    coluna1, coluna2 = st.columns(2)
-
-    with coluna1:
-        data_input = st.date_input("Data", datetime.date.today())
-        descricao_input = st.text_input("Descrição", placeholder="Ex: Compra no Mercado...")
-        valor_input = st.number_input("Valor (R$)", min_value=0.0, format="%.2f")
-        tipo_input = st.selectbox("Tipo", ["Saída", "Entrada"])
-
-    with coluna2:
-        categoria_input = st.selectbox(
-            "Categoria",
-            ["Alimentação", "Luz", "Água", "Internet", "Financiamento Casa", "Salário", "Lazer", "Outros"]
-        )
-        # A lista de contas dinâmica entra aqui:
-        conta_input = st.selectbox("Conta_Origem", lista_de_contas)
-        
-        status_input = st.selectbox("Status", ["Pago", "Pendente"])
-        recorrencia_input = st.selectbox("Recorrência", ["Único", "Fixo Mensal", "Parcelado"])
-
-    botao_salvar = st.form_submit_button("Salvar Transação")
-
-# Lógica de Salvar a Transação
-if botao_salvar:
-    dados_existentes = conn.read(worksheet=st.session_state["aba_usuario"], usecols=list(range(10)))
-
-    novo_id = len(dados_existentes) + 1
-
-    nova_linha = pd.DataFrame([{
-        "ID": novo_id,
-        "Data": data_input.strftime("%d/%m/%Y"),
-        "Descricao": descricao_input,
-        "Valor": valor_input,
-        "Tipo": tipo_input,
-        "Categoria": categoria_input,
-        "Conta_Origem": conta_input,
-        "Status": status_input,
-        "Recorrencia": recorrencia_input,
-        "Data_Baixa": datetime.date.today().strftime("%d/%m/%Y") if status_input == "Pago" else "",
-    }])
-
-    dados_atualizados = pd.concat([dados_existentes, nova_linha], ignore_index=True)
-
-    conn.update(worksheet=st.session_state["aba_usuario"], data=dados_atualizados)
-    st.success(f"Transação '{descricao_input}' salva com sucesso!")
-
-
-st.divider()
-
-# --- PAINEL DE DAR BAIXA ---
+# Lemos os dados uma única vez aqui no topo para usar no app todo
 dados_atuais = conn.read(worksheet=st.session_state["aba_usuario"], usecols=list(range(10)), ttl=0)
 
-st.subheader("✅ Dar Baixa em Pagamentos Pendentes")
+# ==========================================
+# 5. CRIANDO AS ABAS DE NAVEGAÇÃO
+# ==========================================
+aba_lancamentos, aba_relatorios = st.tabs(["📝 Lançamentos", "📊 Gráficos e Relatórios"])
 
-pendentes = dados_atuais[dados_atuais["Status"] == "Pendente"]
+# ------------------------------------------
+# ABA 1: LANÇAMENTOS (Onde entra o dinheiro)
+# ------------------------------------------
+with aba_lancamentos:
+    if st.session_state["aba_usuario"] == "Transacao":
+        lista_de_contas = ["Cartão Nubank Carlos", "Cartão Nubank Regiane", "Dinheiro/Débito ou PIX"]
+    else:
+        lista_de_contas = ["Cartão de Crédito", "Conta Corrente", "Dinheiro/PIX"]
 
-if not pendentes.empty:
-    opcoes = (
-        pendentes["ID"].astype(int).astype(str)
-        + " - "
-        + pendentes["Descricao"]
-        + " (R$ "
-        + pendentes["Valor"].astype(str)
-        + ")"
-    )
+    st.subheader("📝 Adicionar Nova Transação")
 
-    col_baixa1, col_baixa2 = st.columns([3, 1]) 
+    with st.form(key="form_nova_transacao", clear_on_submit=True):
+        coluna1, coluna2 = st.columns(2)
 
-    with col_baixa1:
-        transacao_escolhida = st.selectbox("Selecione a transação:", opcoes)
+        with coluna1:
+            data_input = st.date_input("Data", datetime.date.today())
+            descricao_input = st.text_input("Descrição", placeholder="Ex: Compra no Mercado...")
+            valor_input = st.number_input("Valor (R$)", min_value=0.0, format="%.2f")
+            tipo_input = st.selectbox("Tipo", ["Saída", "Entrada"])
 
-    with col_baixa2:
-        st.write("") 
-        st.write("") 
-        botao_baixa = st.button("Dar Baixa")
+        with coluna2:
+            categoria_input = st.selectbox("Categoria", ["Alimentação", "Luz", "Água", "Internet", "Financiamento Casa", "Salário", "Lazer", "Outros"])
+            conta_input = st.selectbox("Conta_Origem", lista_de_contas)
+            status_input = st.selectbox("Status", ["Pago", "Pendente"])
+            recorrencia_input = st.selectbox("Recorrência", ["Único", "Fixo Mensal", "Parcelado"])
 
-    if botao_baixa:
-        id_escolhido = int(float(transacao_escolhida.split(" - ")[0]))
+        botao_salvar = st.form_submit_button("Salvar Transação")
 
-        indice = dados_atuais.index[dados_atuais["ID"] == id_escolhido][0]
-
-        dados_atuais.at[indice, "Status"] = "Pago"
-        dados_atuais.at[indice, "Data_Baixa"] = datetime.date.today().strftime("%d/%m/%Y")
-
-        conn.update(worksheet=st.session_state["aba_usuario"], data=dados_atuais)
-        st.success("Pagamento baixado com sucesso!")
+    if botao_salvar:
+        novo_id = len(dados_atuais) + 1
+        nova_linha = pd.DataFrame([{
+            "ID": novo_id,
+            "Data": data_input.strftime("%d/%m/%Y"),
+            "Descricao": descricao_input,
+            "Valor": valor_input,
+            "Tipo": tipo_input,
+            "Categoria": categoria_input,
+            "Conta_Origem": conta_input,
+            "Status": status_input,
+            "Recorrencia": recorrencia_input,
+            "Data_Baixa": datetime.date.today().strftime("%d/%m/%Y") if status_input == "Pago" else "",
+        }])
+        dados_atualizados = pd.concat([dados_atuais, nova_linha], ignore_index=True)
+        conn.update(worksheet=st.session_state["aba_usuario"], data=dados_atualizados)
+        st.success(f"Transação '{descricao_input}' salva com sucesso!")
         st.rerun()
-else:
-    st.info("Nenhum pagamento pendente! Tudo em dia. 🎉")
+
+    st.divider()
+
+    # --- PAINEL DE DAR BAIXA ---
+    st.subheader("✅ Dar Baixa em Pagamentos Pendentes")
+    pendentes = dados_atuais[dados_atuais["Status"] == "Pendente"]
+
+    if not pendentes.empty:
+        opcoes = (pendentes["ID"].astype(int).astype(str) + " - " + pendentes["Descricao"] + " (R$ " + pendentes["Valor"].astype(str) + ")")
+        col_baixa1, col_baixa2 = st.columns([3, 1]) 
+        with col_baixa1:
+            transacao_escolhida = st.selectbox("Selecione a transação:", opcoes)
+        with col_baixa2:
+            st.write(""); st.write("") 
+            botao_baixa = st.button("Dar Baixa")
+
+        if botao_baixa:
+            id_escolhido = int(float(transacao_escolhida.split(" - ")[0]))
+            indice = dados_atuais.index[dados_atuais["ID"] == id_escolhido][0]
+            dados_atuais.at[indice, "Status"] = "Pago"
+            dados_atuais.at[indice, "Data_Baixa"] = datetime.date.today().strftime("%d/%m/%Y")
+            conn.update(worksheet=st.session_state["aba_usuario"], data=dados_atuais)
+            st.success("Pagamento baixado com sucesso!")
+            st.rerun()
+    else:
+        st.info("Nenhum pagamento pendente! Tudo em dia. 🎉")
+
+    st.divider()
+
+    # --- TABELA DE EDIÇÃO LIVRE ---
+    st.subheader("📊 Histórico de Transações")
+    st.write("💡 Dê um duplo clique em qualquer célula para editar.")
+    dados_editados = st.data_editor(dados_atuais, use_container_width=True, hide_index=True, key="editor_tabela")
+
+    if not dados_atuais.equals(dados_editados):
+        st.warning("⚠️ Você fez alterações na tabela. Clique abaixo para confirmar.")
+        if st.button("💾 Salvar Alterações no Banco"):
+            conn.update(worksheet=st.session_state["aba_usuario"], data=dados_editados)
+            st.success("Alterações salvas com sucesso!")
+            st.rerun() 
 
 
-st.divider()
+# ------------------------------------------
+# ABA 2: GRÁFICOS E RELATÓRIOS (A Inteligência)
+# ------------------------------------------
+with aba_relatorios:
+    st.subheader("📊 Painel de Inteligência Financeira")
+    
+    # Prepara os dados matematicamente para evitar erros
+    dados_graficos = dados_atuais.copy()
+    dados_graficos["Valor"] = pd.to_numeric(dados_graficos["Valor"], errors="coerce").fillna(0)
+    
+    # Converte a data para o formato Ano-Mês (ex: 2026-09) para ordenar corretamente no gráfico
+    dados_graficos["Data_Real"] = pd.to_datetime(dados_graficos["Data"], format="%d/%m/%Y", errors="coerce")
+    dados_graficos["Mes_Ano"] = dados_graficos["Data_Real"].dt.strftime("%Y-%m")
+    
+    if not dados_graficos.empty and not dados_graficos["Data_Real"].isnull().all():
+        
+        # --- GRÁFICO 1: Entradas x Saídas x Diferença (Mês a Mês) ---
+        st.markdown("#### ⚖️ Balanço Mensal (Entradas x Saídas x Diferença)")
+        
+        # Agrupa os dados
+        resumo_mes = dados_graficos.groupby(["Mes_Ano", "Tipo"])["Valor"].sum().unstack(fill_value=0)
+        
+        # Garante que as colunas existam mesmo se não houver registros em um mês
+        if "Entrada" not in resumo_mes.columns: resumo_mes["Entrada"] = 0
+        if "Saída" not in resumo_mes.columns: resumo_mes["Saída"] = 0
+            
+        resumo_mes["Diferença (Saldo)"] = resumo_mes["Entrada"] - resumo_mes["Saída"]
+        
+        # Desenha o gráfico de barras (O Streamlit escolhe cores automáticas lindas pra isso)
+        st.bar_chart(resumo_mes[["Entrada", "Saída", "Diferença (Saldo)"]])
+        
+        st.divider()
 
-# --- TABELA DE EDIÇÃO LIVRE ---
-st.subheader("📊 Histórico de Transações")
-st.write("💡 Dê um duplo clique em qualquer célula para editar.")
-
-dados_editados = st.data_editor(
-    dados_atuais, use_container_width=True, hide_index=True, key="editor_tabela"
-)
-
-if not dados_atuais.equals(dados_editados):
-    st.warning("⚠️ Você fez alterações na tabela. Clique abaixo para confirmar.")
-
-    if st.button("💾 Salvar Alterações no Banco"):
-        conn.update(worksheet=st.session_state["aba_usuario"], data=dados_editados)
-        st.success("Alterações salvas com sucesso!")
-        st.rerun()
+        # Isolar apenas os gastos (Saídas) para os próximos gráficos
+        saidas = dados_graficos[dados_graficos["Tipo"] == "Saída"]
+        
+        if not saidas.empty:
+            # --- GRÁFICOS 2 e 3: Gráficos de Rosca Lado a Lado ---
+            st.markdown("#### 🍩 Distribuição de Despesas")
+            col_rosca1, col_rosca2 = st.columns(2)
+            
+            with col_rosca1:
+                st.markdown("**Por Categoria (Onde gastei?)**")
+                gastos_cat = saidas.groupby("Categoria")["Valor"].sum().reset_index()
+                rosca_cat = alt.Chart(gastos_cat).mark_arc(innerRadius=50).encode(
+                    theta=alt.Theta(field="Valor", type="quantitative"),
+                    color=alt.Color(field="Categoria", type="nominal"),
+                    tooltip=["Categoria", "Valor"]
+                ).properties(height=300)
+                # theme="streamlit" faz as letras ficarem brancas no fundo escuro automaticamente
+                st.altair_chart(rosca_cat, use_container_width=True, theme="streamlit")
+                
+            with col_rosca2:
+                st.markdown("**Por Conta (Como paguei?)**")
+                gastos_conta_rosca = saidas.groupby("Conta_Origem")["Valor"].sum().reset_index()
+                rosca_conta = alt.Chart(gastos_conta_rosca).mark_arc(innerRadius=50).encode(
+                    theta=alt.Theta(field="Valor", type="quantitative"),
+                    color=alt.Color(field="Conta_Origem", type="nominal"),
+                    tooltip=["Conta_Origem", "Valor"]
+                ).properties(height=300)
+                st.altair_chart(rosca_conta, use_container_width=True, theme="streamlit")
+                
+            st.divider()
+            
+            # --- GRÁFICO 4: Formas de Pagamento Mês a Mês ---
+            st.markdown("#### 💳 Evolução das Formas de Pagamento (Mês a Mês)")
+            
+            # Agrupa Mês x Conta_Origem
+            evolucao_contas = saidas.groupby(["Mes_Ano", "Conta_Origem"])["Valor"].sum().unstack(fill_value=0)
+            
+            # O gráfico de barras nativo empilha e separa automaticamente
+            st.bar_chart(evolucao_contas)
+            
+        else:
+            st.info("Nenhuma despesa (Saída) registrada para gerar os relatórios detalhados.")
+            
+    else:
+        st.info("Adicione transações para ver os gráficos!")
