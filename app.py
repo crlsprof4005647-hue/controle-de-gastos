@@ -107,32 +107,28 @@ st.write(f"Bem-vindo(a)! Base de dados ativa: **{st.session_state['aba_usuario']
 conn = st.connection("gsheets", type=GSheetsConnection)
 dados_atuais = conn.read(worksheet=st.session_state["aba_usuario"], usecols=list(range(10)), ttl=0)
 
-# Garantir que Valores são números para os cálculos
 dados_atuais["Valor"] = pd.to_numeric(dados_atuais["Valor"], errors="coerce").fillna(0)
 
 # --- LÓGICA DO FILTRO GLOBAL (MASTER FILTER) ---
-# 1. Extrai os meses existentes no banco de dados
 datas_convertidas = pd.to_datetime(dados_atuais["Data"], format="%d/%m/%Y", errors="coerce").dropna()
 meses_disponiveis = datas_convertidas.dt.strftime("%m/%Y").unique().tolist()
 meses_disponiveis = sorted(meses_disponiveis, key=lambda x: datetime.datetime.strptime(x, "%m/%Y"))
 opcoes_filtro = ["Todos"] + meses_disponiveis
 
-st.write("") # Pula uma linha
+st.write("") 
 
-# 2. Cria as colunas para o Filtro e os Cartões (O Filtro fica na primeira coluna, menorzinho)
 col_filtro, col_card1, col_card2, col_card3 = st.columns([1.2, 1, 1, 1])
 
 with col_filtro:
     mes_selecionado = st.selectbox("📅 Filtro de Mês:", opcoes_filtro)
 
-# 3. Aplica o filtro na base que será usada para tela
 if mes_selecionado != "Todos":
     mascara_mes = datas_convertidas.dt.strftime("%m/%Y") == mes_selecionado
     dados_filtrados = dados_atuais.loc[mascara_mes.index[mascara_mes]].copy()
 else:
     dados_filtrados = dados_atuais.copy()
 
-# --- CARTÕES GLOBAIS DE RESUMO (Agora respeitam o Filtro) ---
+# --- CARTÕES GLOBAIS DE RESUMO ---
 total_entradas = dados_filtrados[dados_filtrados["Tipo"] == "Entrada"]["Valor"].sum()
 total_saidas = dados_filtrados[dados_filtrados["Tipo"] == "Saída"]["Valor"].sum()
 saldo_atual = total_entradas - total_saidas
@@ -163,78 +159,101 @@ with aba_lancamentos:
 
     st.subheader("📝 Adicionar Nova Transação")
     
+    # Formulário dinâmico e responsivo (sem a trava do st.form)
     tipo_input = st.radio("Selecione o Tipo:", ["Saída", "Entrada"], horizontal=True)
 
-    with st.form(key="form_nova_transacao", clear_on_submit=True):
-        coluna1, coluna2 = st.columns(2)
+    coluna1, coluna2 = st.columns(2)
+    
+    with coluna1:
+        data_input = st.date_input("Data da Compra", datetime.date.today())
+        descricao_input = st.text_input("Descrição", placeholder="Ex: Compra no Mercado...")
         
-        with coluna1:
-            data_input = st.date_input("Data da Compra", datetime.date.today())
-            descricao_input = st.text_input("Descrição", placeholder="Ex: Compra no Mercado...")
+    with coluna2:
+        categoria_input = st.selectbox("Categoria", lista_de_categorias)
+        conta_input = st.selectbox("Conta (Origem/Destino)", lista_de_contas)
+        
+    num_parcelas = 1
+    data_vencimento = data_input
+    valor_input = 0.0
+
+    if tipo_input == "Saída":
+        col_status1, col_status2 = st.columns(2)
+        with col_status1:
+            status_input = st.selectbox("Status", ["Pago", "Pendente"])
+        with col_status2:
+            recorrencia_input = st.selectbox("Recorrência", ["Único", "Fixo Mensal", "Parcelado"])
+            
+        # ONDE A MÁGICA DO PARCELAMENTO ACONTECE NA TELA:
+        if recorrencia_input == "Parcelado":
+            st.markdown("---")
+            st.markdown("**Detalhes do Parcelamento**")
+            col_parc1, col_parc2, col_parc3 = st.columns(3)
+            with col_parc1:
+                # Agora o app te pergunta exatamente o Valor da Parcela
+                valor_input = st.number_input("Valor da Parcela (R$)", min_value=0.0, format="%.2f")
+            with col_parc2:
+                # E a Quantidade de Vezes
+                num_parcelas = st.number_input("Qtd. de Parcelas", min_value=2, max_value=120, value=2, step=1)
+            with col_parc3:
+                data_vencimento = st.date_input("Vencimento 1ª Parcela", datetime.date.today())
+        else:
+            # Se for transação comum, pergunta o Valor Total
             valor_input = st.number_input("Valor Total (R$)", min_value=0.0, format="%.2f")
             
-        with coluna2:
-            categoria_input = st.selectbox("Categoria", lista_de_categorias)
-            conta_input = st.selectbox("Conta (Origem/Destino)", lista_de_contas)
-            
-            num_parcelas = 1
-            data_vencimento = data_input
+    else:
+        valor_input = st.number_input("Valor Total (R$)", min_value=0.0, format="%.2f")
+        st.info("💡 Entradas são registradas automaticamente como 'Pago' e 'Único'.")
+        status_input = "Pago"
+        recorrencia_input = "Único"
 
-            if tipo_input == "Saída":
-                status_input = st.selectbox("Status", ["Pago", "Pendente"])
-                recorrencia_input = st.selectbox("Recorrência", ["Único", "Fixo Mensal", "Parcelado"])
-                
-                if recorrencia_input == "Parcelado":
-                    st.markdown("---")
-                    st.markdown("**Detalhes do Parcelamento**")
-                    col_parc1, col_parc2 = st.columns(2)
-                    with col_parc1:
-                        num_parcelas = st.number_input("Qtd. de Parcelas", min_value=2, max_value=120, value=2, step=1)
-                    with col_parc2:
-                        data_vencimento = st.date_input("Vencimento 1ª Parcela", datetime.date.today())
-            else:
-                st.info("💡 Entradas são registradas automaticamente como 'Pago' e 'Único'.")
-                status_input = "Pago"
-                recorrencia_input = "Único"
+    st.write("")
+    botao_salvar = st.button("💾 Salvar Transação", use_container_width=True)
 
-        botao_salvar = st.form_submit_button("Salvar Transação")
-
+    # ONDE A MÁGICA DOS MESES REFERENTES ACONTECE NO CÓDIGO:
     if botao_salvar:
-        linhas_novas = []
-        
-        if tipo_input == "Saída" and recorrencia_input == "Parcelado":
-            valor_da_parcela = valor_input / num_parcelas
-            
-            for i in range(num_parcelas):
-                novo_id = len(dados_atuais) + i + 1
-                data_parcela = (pd.Timestamp(data_vencimento) + pd.DateOffset(months=i)).date()
-                descricao_parcela = f"{descricao_input} ({i+1}/{num_parcelas})"
-                
-                status_parcela = status_input if i == 0 else "Pendente"
-                data_baixa_parcela = datetime.date.today().strftime("%d/%m/%Y") if status_parcela == "Pago" else ""
-                
-                linhas_novas.append({
-                    "ID": novo_id, "Data": data_parcela.strftime("%d/%m/%Y"), "Descricao": descricao_parcela,
-                    "Valor": valor_da_parcela, "Tipo": tipo_input, "Categoria": categoria_input,
-                    "Conta_Origem": conta_input, "Status": status_parcela, "Recorrencia": recorrencia_input,
-                    "Data_Baixa": data_baixa_parcela,
-                })
+        if valor_input == 0:
+            st.error("Por favor, digite um valor maior que zero para a transação.")
         else:
-            novo_id = len(dados_atuais) + 1
-            linhas_novas.append({
-                "ID": novo_id, "Data": data_input.strftime("%d/%m/%Y"), "Descricao": descricao_input,
-                "Valor": valor_input, "Tipo": tipo_input, "Categoria": categoria_input,
-                "Conta_Origem": conta_input, "Status": status_input, "Recorrencia": recorrencia_input,
-                "Data_Baixa": datetime.date.today().strftime("%d/%m/%Y") if status_input == "Pago" else "",
-            })
+            linhas_novas = []
+            
+            if tipo_input == "Saída" and recorrencia_input == "Parcelado":
+                # Como você já digitou o valor da parcela, o sistema usa ele direto
+                valor_da_parcela = valor_input 
+                
+                # O Loop 'for' roda a quantidade de vezes que você digitou
+                for i in range(num_parcelas):
+                    novo_id = len(dados_atuais) + i + 1
+                    
+                    # pd.DateOffset soma os meses matematicamente (ex: se era 01/10, vira 01/11, 01/12...)
+                    data_parcela = (pd.Timestamp(data_vencimento) + pd.DateOffset(months=i)).date()
+                    
+                    descricao_parcela = f"{descricao_input} ({i+1}/{num_parcelas})"
+                    
+                    # Só a primeira parcela recebe o status digitado pelo usuário. As demais nascem pendentes.
+                    status_parcela = status_input if i == 0 else "Pendente"
+                    data_baixa_parcela = datetime.date.today().strftime("%d/%m/%Y") if status_parcela == "Pago" else ""
+                    
+                    linhas_novas.append({
+                        "ID": novo_id, "Data": data_parcela.strftime("%d/%m/%Y"), "Descricao": descricao_parcela,
+                        "Valor": valor_da_parcela, "Tipo": tipo_input, "Categoria": categoria_input,
+                        "Conta_Origem": conta_input, "Status": status_parcela, "Recorrencia": recorrencia_input,
+                        "Data_Baixa": data_baixa_parcela,
+                    })
+            else:
+                novo_id = len(dados_atuais) + 1
+                linhas_novas.append({
+                    "ID": novo_id, "Data": data_input.strftime("%d/%m/%Y"), "Descricao": descricao_input,
+                    "Valor": valor_input, "Tipo": tipo_input, "Categoria": categoria_input,
+                    "Conta_Origem": conta_input, "Status": status_input, "Recorrencia": recorrencia_input,
+                    "Data_Baixa": datetime.date.today().strftime("%d/%m/%Y") if status_input == "Pago" else "",
+                })
 
-        df_linhas_novas = pd.DataFrame(linhas_novas)
-        # Sempre salva na base completa para não perder dados do passado!
-        dados_atualizados = pd.concat([dados_atuais, df_linhas_novas], ignore_index=True)
-        conn.update(worksheet=st.session_state["aba_usuario"], data=dados_atualizados)
-        
-        st.success(f"Transação '{descricao_input}' salva com sucesso!")
-        st.rerun()
+            df_linhas_novas = pd.DataFrame(linhas_novas)
+            dados_atualizados = pd.concat([dados_atuais, df_linhas_novas], ignore_index=True)
+            conn.update(worksheet=st.session_state["aba_usuario"], data=dados_atualizados)
+            
+            st.success(f"Transação '{descricao_input}' salva com sucesso!")
+            st.rerun()
 
     st.divider()
 
@@ -320,7 +339,7 @@ with aba_lancamentos:
     else:
         st.write("Nenhum gasto registrado para gerar o resumo neste mês.")
 
-    # --- TABELA DE EDIÇÃO LIVRE (Atualização Segura) ---
+    # --- TABELA DE EDIÇÃO LIVRE ---
     st.subheader("📊 Histórico de Transações")
     st.write("💡 Dê um duplo clique em qualquer célula para editar.")
     
@@ -332,7 +351,6 @@ with aba_lancamentos:
         if st.button("💾 Salvar Alterações no Banco"):
             dados_para_salvar = dados_editados.rename(columns=lambda x: x.replace(" ", "_"))
             
-            # Lógica de Segurança: Atualiza a base principal APENAS com as linhas alteradas (usando o ID)
             dados_base = dados_atuais.copy()
             dados_base["ID"] = pd.to_numeric(dados_base["ID"], errors="coerce")
             dados_para_salvar["ID"] = pd.to_numeric(dados_para_salvar["ID"], errors="coerce")
@@ -354,14 +372,12 @@ with aba_lancamentos:
 with aba_relatorios:
     st.subheader("📊 Painel de Inteligência Financeira")
     
-    # NOVIDADE: Os gráficos agora também respeitam o filtro global!
     dados_graficos = dados_filtrados.copy()
     dados_graficos["Data_Real"] = pd.to_datetime(dados_graficos["Data"], format="%d/%m/%Y", errors="coerce")
     dados_graficos["Mes_Ano"] = dados_graficos["Data_Real"].dt.strftime("%Y-%m")
     
     if not dados_graficos.empty and not dados_graficos["Data_Real"].isnull().all():
         
-        # --- GRÁFICO 1: Balanço Mensal ---
         st.markdown("#### ⚖️ Balanço Mensal (Entradas x Saídas x Diferença)")
         
         resumo_mes = dados_graficos.groupby(["Mes_Ano", "Tipo"])["Valor"].sum().unstack(fill_value=0)
@@ -392,7 +408,6 @@ with aba_relatorios:
         saidas = dados_graficos[dados_graficos["Tipo"] == "Saída"]
         
         if not saidas.empty:
-            # --- GRÁFICOS 2 e 3: Roscas ---
             st.markdown("#### 🍩 Distribuição de Despesas")
             col_rosca1, col_rosca2 = st.columns(2)
             
@@ -434,7 +449,6 @@ with aba_relatorios:
                 
             st.divider()
             
-            # --- GRÁFICO 4: Formas de Pagamento Mensal ---
             st.markdown("#### 💳 Evolução das Formas de Pagamento")
             
             evolucao_contas = saidas.groupby(["Mes_Ano", "Conta_Origem"])["Valor"].sum().reset_index()
