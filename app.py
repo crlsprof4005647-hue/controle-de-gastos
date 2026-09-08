@@ -132,8 +132,8 @@ aba_lancamentos, aba_relatorios = st.tabs(["📝 Lançamentos", "📊 Gráficos 
 # ------------------------------------------
 with aba_lancamentos:
     if st.session_state["aba_usuario"] == "Transacao":
-        lista_de_contas = ["Cartão Nubank Carlos", "Cartão Nubank Regiane", "Dinheiro/Débito ou PIX"]
-        lista_de_categorias = ["Alimentação", "Luz", "Água", "Internet", "Financiamento Casa", "Salário", "Lazer", "Outros"]
+        lista_de_contas = ["Cartão de Crédito", "Dinheiro/Débito ou PIX"]
+        lista_de_categorias = ["delivery", "Luz", "Água", "Internet", "Financiamento Casa", "Salário", "Uber", "Lazer", "Outros"]
     else:
         lista_de_contas = ["Cartão de Crédito", "Conta Corrente", "Dinheiro/PIX"]
         lista_de_categorias = ["Internet", "Carro", "Aluguel", "Faculdade", "Salário", "Lazer", "Outros"]
