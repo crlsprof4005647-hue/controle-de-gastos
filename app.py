@@ -110,17 +110,40 @@ dados_atuais = conn.read(worksheet=st.session_state["aba_usuario"], usecols=list
 # Garantir que Valores são números para os cálculos
 dados_atuais["Valor"] = pd.to_numeric(dados_atuais["Valor"], errors="coerce").fillna(0)
 
-# --- CARTÕES GLOBAIS DE RESUMO ---
-total_entradas = dados_atuais[dados_atuais["Tipo"] == "Entrada"]["Valor"].sum()
-total_saidas = dados_atuais[dados_atuais["Tipo"] == "Saída"]["Valor"].sum()
+# --- LÓGICA DO FILTRO GLOBAL (MASTER FILTER) ---
+# 1. Extrai os meses existentes no banco de dados
+datas_convertidas = pd.to_datetime(dados_atuais["Data"], format="%d/%m/%Y", errors="coerce").dropna()
+meses_disponiveis = datas_convertidas.dt.strftime("%m/%Y").unique().tolist()
+meses_disponiveis = sorted(meses_disponiveis, key=lambda x: datetime.datetime.strptime(x, "%m/%Y"))
+opcoes_filtro = ["Todos"] + meses_disponiveis
+
+st.write("") # Pula uma linha
+
+# 2. Cria as colunas para o Filtro e os Cartões (O Filtro fica na primeira coluna, menorzinho)
+col_filtro, col_card1, col_card2, col_card3 = st.columns([1.2, 1, 1, 1])
+
+with col_filtro:
+    mes_selecionado = st.selectbox("📅 Filtro de Mês:", opcoes_filtro)
+
+# 3. Aplica o filtro na base que será usada para tela
+if mes_selecionado != "Todos":
+    mascara_mes = datas_convertidas.dt.strftime("%m/%Y") == mes_selecionado
+    dados_filtrados = dados_atuais.loc[mascara_mes.index[mascara_mes]].copy()
+else:
+    dados_filtrados = dados_atuais.copy()
+
+# --- CARTÕES GLOBAIS DE RESUMO (Agora respeitam o Filtro) ---
+total_entradas = dados_filtrados[dados_filtrados["Tipo"] == "Entrada"]["Valor"].sum()
+total_saidas = dados_filtrados[dados_filtrados["Tipo"] == "Saída"]["Valor"].sum()
 saldo_atual = total_entradas - total_saidas
 
-col_card1, col_card2, col_card3 = st.columns(3)
 col_card1.metric("⬆️ Entradas", formata_moeda(total_entradas))
 col_card2.metric("⬇️ Saídas", formata_moeda(total_saidas))
 col_card3.metric("💰 Saldo Atual", formata_moeda(saldo_atual))
 
 st.write("") 
+st.divider()
+
 # ==========================================
 # 5. CRIANDO AS ABAS DE NAVEGAÇÃO
 # ==========================================
@@ -206,6 +229,7 @@ with aba_lancamentos:
             })
 
         df_linhas_novas = pd.DataFrame(linhas_novas)
+        # Sempre salva na base completa para não perder dados do passado!
         dados_atualizados = pd.concat([dados_atuais, df_linhas_novas], ignore_index=True)
         conn.update(worksheet=st.session_state["aba_usuario"], data=dados_atualizados)
         
@@ -214,28 +238,7 @@ with aba_lancamentos:
 
     st.divider()
 
-    # --- NOVIDADE: FILTRO INTELIGENTE DE MÊS/ANO ---
-    st.markdown("### 🔍 Filtrar Visualização Abaixo")
-    
-    # Extrai as datas e cria a lista de meses disponíveis (ex: 09/2026, 10/2026)
-    datas_convertidas = pd.to_datetime(dados_atuais["Data"], format="%d/%m/%Y", errors="coerce").dropna()
-    meses_disponiveis = datas_convertidas.dt.strftime("%m/%Y").unique().tolist()
-    meses_disponiveis = sorted(meses_disponiveis, key=lambda x: datetime.datetime.strptime(x, "%m/%Y"))
-    
-    opcoes_filtro = ["Todos"] + meses_disponiveis
-    mes_selecionado = st.selectbox("Selecione o Mês de Vencimento:", opcoes_filtro)
-
-    # Aplica o filtro na tabela temporária que alimenta os painéis abaixo
-    if mes_selecionado != "Todos":
-        mascara_mes = datas_convertidas.dt.strftime("%m/%Y") == mes_selecionado
-        # Pega as linhas que correspondem ao mês (usando o índice para bater certinho)
-        dados_filtrados = dados_atuais.loc[mascara_mes.index[mascara_mes]].copy()
-    else:
-        dados_filtrados = dados_atuais.copy()
-
-    st.divider()
-
-    # --- PAINEL DE DAR BAIXA (Agora respeita o Filtro) ---
+    # --- PAINEL DE DAR BAIXA (Respeita o Filtro) ---
     st.subheader("✅ Dar Baixa em Pagamentos Pendentes")
     pendentes = dados_filtrados[dados_filtrados["Status"] == "Pendente"]
 
@@ -255,7 +258,6 @@ with aba_lancamentos:
 
         if botao_baixa:
             id_escolhido = int(float(transacao_escolhida.split(" - ")[0]))
-            # A baixa altera o dado original para garantir que salva certo no banco
             indice = dados_atuais.index[dados_atuais["ID"] == id_escolhido][0]
             dados_atuais.at[indice, "Status"] = "Pago"
             dados_atuais.at[indice, "Data_Baixa"] = datetime.date.today().strftime("%d/%m/%Y")
@@ -263,11 +265,11 @@ with aba_lancamentos:
             st.success("Pagamento baixado com sucesso!")
             st.rerun()
     else:
-        st.info("Nenhum pagamento pendente para este filtro! Tudo em dia. 🎉")
+        st.info("Nenhum pagamento pendente para este mês! Tudo em dia. 🎉")
 
     st.divider()
 
-    # --- PAINEL DE DESFAZER PAGAMENTO (Agora respeita o Filtro) ---
+    # --- PAINEL DE DESFAZER PAGAMENTO (Respeita o Filtro) ---
     st.subheader("⏪ Desfazer Pagamento (Voltar para Pendente)")
     pagos = dados_filtrados[dados_filtrados["Status"] == "Pago"]
 
@@ -296,7 +298,7 @@ with aba_lancamentos:
             st.success("Pagamento revertido para pendente com sucesso!")
             st.rerun()
     else:
-        st.info("Nenhum pagamento concluído para desfazer neste filtro.")
+        st.info("Nenhum pagamento concluído para desfazer neste mês.")
 
     st.divider()
 
@@ -316,9 +318,9 @@ with aba_lancamentos:
         
         st.dataframe(resumo_cat, use_container_width=True, hide_index=True)
     else:
-        st.write("Nenhum gasto registrado para gerar o resumo neste filtro.")
+        st.write("Nenhum gasto registrado para gerar o resumo neste mês.")
 
-    # --- TABELA DE EDIÇÃO LIVRE (Respeita o Filtro com Atualização Segura) ---
+    # --- TABELA DE EDIÇÃO LIVRE (Atualização Segura) ---
     st.subheader("📊 Histórico de Transações")
     st.write("💡 Dê um duplo clique em qualquer célula para editar.")
     
@@ -328,22 +330,17 @@ with aba_lancamentos:
     if not dados_exibicao.equals(dados_editados):
         st.warning("⚠️ Você fez alterações na tabela. Clique abaixo para confirmar.")
         if st.button("💾 Salvar Alterações no Banco"):
-            
             dados_para_salvar = dados_editados.rename(columns=lambda x: x.replace(" ", "_"))
             
-            # Lógica de Segurança: Pega a base completa e atualiza APENAS as linhas alteradas (pelo ID)
+            # Lógica de Segurança: Atualiza a base principal APENAS com as linhas alteradas (usando o ID)
             dados_base = dados_atuais.copy()
-            
             dados_base["ID"] = pd.to_numeric(dados_base["ID"], errors="coerce")
             dados_para_salvar["ID"] = pd.to_numeric(dados_para_salvar["ID"], errors="coerce")
             
             dados_base = dados_base.set_index("ID")
             dados_para_salvar = dados_para_salvar.set_index("ID")
             
-            # Atualiza a base principal com os dados modificados no filtro
             dados_base.update(dados_para_salvar)
-            
-            # Volta o ID para ser uma coluna
             dados_base = dados_base.reset_index()
             
             conn.update(worksheet=st.session_state["aba_usuario"], data=dados_base)
@@ -357,7 +354,8 @@ with aba_lancamentos:
 with aba_relatorios:
     st.subheader("📊 Painel de Inteligência Financeira")
     
-    dados_graficos = dados_atuais.copy()
+    # NOVIDADE: Os gráficos agora também respeitam o filtro global!
+    dados_graficos = dados_filtrados.copy()
     dados_graficos["Data_Real"] = pd.to_datetime(dados_graficos["Data"], format="%d/%m/%Y", errors="coerce")
     dados_graficos["Mes_Ano"] = dados_graficos["Data_Real"].dt.strftime("%Y-%m")
     
@@ -459,7 +457,7 @@ with aba_relatorios:
             st.altair_chart(grafico_contas_final, use_container_width=True, theme=None)
             
         else:
-            st.info("Nenhuma despesa (Saída) registrada para gerar os relatórios detalhados.")
+            st.info("Nenhuma despesa (Saída) registrada para este período.")
             
     else:
         st.info("Adicione transações para ver os gráficos!")
