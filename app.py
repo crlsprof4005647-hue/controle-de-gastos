@@ -4,6 +4,10 @@ import datetime
 import altair as alt
 from streamlit_gsheets import GSheetsConnection
 
+# Função auxiliar para deixar o dinheiro no padrão Brasil (R$ 1.234,56)
+def formata_moeda(valor):
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
 # ==========================================
 # 1. CONFIGURAÇÃO INICIAL DA PÁGINA
 # ==========================================
@@ -36,9 +40,11 @@ else:
         .stApp { background-color: #1E293B; }
         
         /* Textos e Títulos */
-        h1, h2, h3, h4, p, label, .stMarkdown { color: #FFFFFF !important; }
+        h1, h2, h3, h4, p, label, .stMarkdown, div[data-testid="stMetricValue"], div[data-testid="stMetricLabel"] { 
+            color: #FFFFFF !important; 
+        }
         
-        /* Consertando Botões (Salvar e Dar Baixa) */
+        /* Consertando Botões */
         div.stButton > button, div[data-testid="stFormSubmitButton"] > button {
             background-color: #2563EB !important;
             color: #FFFFFF !important;
@@ -99,10 +105,22 @@ st.title("💲 Meu Controle Financeiro")
 st.write(f"Bem-vindo(a)! Base de dados ativa: **{st.session_state['aba_usuario']}**")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
-
 dados_atuais = conn.read(worksheet=st.session_state["aba_usuario"], usecols=list(range(10)), ttl=0)
 
+# Garantir que Valores são números para os cálculos
+dados_atuais["Valor"] = pd.to_numeric(dados_atuais["Valor"], errors="coerce").fillna(0)
 
+# --- NOVIDADE: CARTÕES GLOBAIS DE RESUMO ---
+total_entradas = dados_atuais[dados_atuais["Tipo"] == "Entrada"]["Valor"].sum()
+total_saidas = dados_atuais[dados_atuais["Tipo"] == "Saída"]["Valor"].sum()
+saldo_atual = total_entradas - total_saidas
+
+col_card1, col_card2, col_card3 = st.columns(3)
+col_card1.metric("⬆️ Entradas", formata_moeda(total_entradas))
+col_card2.metric("⬇️ Saídas", formata_moeda(total_saidas))
+col_card3.metric("💰 Saldo Atual", formata_moeda(saldo_atual))
+
+st.write("") # Pula uma linha
 # ==========================================
 # 5. CRIANDO AS ABAS DE NAVEGAÇÃO
 # ==========================================
@@ -115,23 +133,37 @@ aba_lancamentos, aba_relatorios = st.tabs(["📝 Lançamentos", "📊 Gráficos 
 with aba_lancamentos:
     if st.session_state["aba_usuario"] == "Transacao":
         lista_de_contas = ["Cartão Nubank Carlos", "Cartão Nubank Regiane", "Dinheiro/Débito ou PIX"]
+        lista_de_categorias = ["Alimentação", "Luz", "Água", "Internet", "Financiamento Casa", "Salário", "Lazer", "Outros"]
     else:
         lista_de_contas = ["Cartão de Crédito", "Conta Corrente", "Dinheiro/PIX"]
+        lista_de_categorias = ["Internet", "Carro", "Aluguel", "Faculdade", "Salário", "Lazer", "Outros"]
 
     st.subheader("📝 Adicionar Nova Transação")
+    
+    # NOVIDADE: O Tipo fica fora do formulário para a tela reagir instantaneamente
+    tipo_input = st.radio("Selecione o Tipo:", ["Saída", "Entrada"], horizontal=True)
 
     with st.form(key="form_nova_transacao", clear_on_submit=True):
         coluna1, coluna2 = st.columns(2)
+        
         with coluna1:
             data_input = st.date_input("Data", datetime.date.today())
             descricao_input = st.text_input("Descrição", placeholder="Ex: Compra no Mercado...")
             valor_input = st.number_input("Valor (R$)", min_value=0.0, format="%.2f")
-            tipo_input = st.selectbox("Tipo", ["Saída", "Entrada"])
+            
         with coluna2:
-            categoria_input = st.selectbox("Categoria", ["Alimentação", "Luz", "Água", "Internet", "Financiamento Casa", "Salário", "Lazer", "Outros"])
-            conta_input = st.selectbox("Conta_Origem", lista_de_contas)
-            status_input = st.selectbox("Status", ["Pago", "Pendente"])
-            recorrencia_input = st.selectbox("Recorrência", ["Único", "Fixo Mensal", "Parcelado"])
+            categoria_input = st.selectbox("Categoria", lista_de_categorias)
+            conta_input = st.selectbox("Conta (Origem/Destino)", lista_de_contas)
+            
+            # NOVIDADE: Lógica inteligente que esconde os status se for Entrada
+            if tipo_input == "Saída":
+                status_input = st.selectbox("Status", ["Pago", "Pendente"])
+                recorrencia_input = st.selectbox("Recorrência", ["Único", "Fixo Mensal", "Parcelado"])
+            else:
+                # Se for Entrada, não pergunta nada e define tudo nos bastidores
+                st.info("💡 Entradas são registradas automaticamente como 'Pago' e 'Único'.")
+                status_input = "Pago"
+                recorrencia_input = "Único"
 
         botao_salvar = st.form_submit_button("Salvar Transação")
 
@@ -150,11 +182,12 @@ with aba_lancamentos:
 
     st.divider()
 
+    # --- PAINEL DE DAR BAIXA ---
     st.subheader("✅ Dar Baixa em Pagamentos Pendentes")
     pendentes = dados_atuais[dados_atuais["Status"] == "Pendente"]
 
     if not pendentes.empty:
-        opcoes = (
+        opcoes_pendentes = (
             pendentes["ID"].astype(int).astype(str) 
             + " - " + pendentes["Descricao"] 
             + " | " + pendentes["Conta_Origem"]
@@ -162,7 +195,7 @@ with aba_lancamentos:
         )
         col_baixa1, col_baixa2 = st.columns([3, 1]) 
         with col_baixa1:
-            transacao_escolhida = st.selectbox("Selecione a transação:", opcoes)
+            transacao_escolhida = st.selectbox("Selecione a transação:", opcoes_pendentes, key="select_pendentes")
         with col_baixa2:
             st.write(""); st.write("") 
             botao_baixa = st.button("Dar Baixa")
@@ -180,6 +213,62 @@ with aba_lancamentos:
 
     st.divider()
 
+    # --- PAINEL DE DESFAZER PAGAMENTO ---
+    st.subheader("⏪ Desfazer Pagamento (Voltar para Pendente)")
+    pagos = dados_atuais[dados_atuais["Status"] == "Pago"]
+
+    if not pagos.empty:
+        opcoes_pagos = (
+            pagos["ID"].astype(int).astype(str) 
+            + " - " + pagos["Descricao"] 
+            + " | " + pagos["Conta_Origem"]
+            + " (R$ " + pagos["Valor"].astype(str) + ")"
+        )
+        col_desfaz1, col_desfaz2 = st.columns([3, 1]) 
+        with col_desfaz1:
+            transacao_paga_escolhida = st.selectbox("Selecione o pagamento a desfazer:", opcoes_pagos, key="select_pagos")
+        with col_desfaz2:
+            st.write(""); st.write("") 
+            botao_desfazer = st.button("Desfazer Baixa")
+
+        if botao_desfazer:
+            id_escolhido_desfaz = int(float(transacao_paga_escolhida.split(" - ")[0]))
+            indice_desfaz = dados_atuais.index[dados_atuais["ID"] == id_escolhido_desfaz][0]
+            
+            dados_atuais.at[indice_desfaz, "Status"] = "Pendente"
+            dados_atuais.at[indice_desfaz, "Data_Baixa"] = ""
+            
+            conn.update(worksheet=st.session_state["aba_usuario"], data=dados_atuais)
+            st.success("Pagamento revertido para pendente com sucesso!")
+            st.rerun()
+    else:
+        st.info("Nenhum pagamento concluído para desfazer.")
+
+    st.divider()
+
+    # --- NOVIDADE: TABELA DE RESUMO POR CATEGORIA ---
+    st.subheader("📋 Resumo de Gastos por Categoria")
+    saidas_df = dados_atuais[dados_atuais["Tipo"] == "Saída"].copy()
+    
+    if not saidas_df.empty:
+        # Agrupa e calcula as porcentagens
+        resumo_cat = saidas_df.groupby("Categoria")["Valor"].sum().reset_index()
+        total_saidas_calc = resumo_cat["Valor"].sum()
+        
+        # Ordena do maior gasto para o menor ANTES de formatar o texto
+        resumo_cat = resumo_cat.sort_values(by="Valor", ascending=False)
+        
+        resumo_cat["Porcentagem (%)"] = (resumo_cat["Valor"] / total_saidas_calc) * 100
+        
+        # Formata Bonitinho (R$ e %)
+        resumo_cat["Valor"] = resumo_cat["Valor"].apply(formata_moeda)
+        resumo_cat["Porcentagem (%)"] = resumo_cat["Porcentagem (%)"].apply(lambda x: f"{x:.1f} %")
+        
+        st.dataframe(resumo_cat, use_container_width=True, hide_index=True)
+    else:
+        st.write("Nenhum gasto registrado para gerar o resumo.")
+
+    # --- TABELA DE EDIÇÃO LIVRE ---
     st.subheader("📊 Histórico de Transações")
     st.write("💡 Dê um duplo clique em qualquer célula para editar.")
     
@@ -202,7 +291,6 @@ with aba_relatorios:
     st.subheader("📊 Painel de Inteligência Financeira")
     
     dados_graficos = dados_atuais.copy()
-    dados_graficos["Valor"] = pd.to_numeric(dados_graficos["Valor"], errors="coerce").fillna(0)
     dados_graficos["Data_Real"] = pd.to_datetime(dados_graficos["Data"], format="%d/%m/%Y", errors="coerce")
     dados_graficos["Mes_Ano"] = dados_graficos["Data_Real"].dt.strftime("%Y-%m")
     
@@ -218,16 +306,14 @@ with aba_relatorios:
         
         resumo_melted = resumo_mes.reset_index().melt(id_vars="Mes_Ano", value_vars=["Entrada", "Saída", "Diferença"], var_name="Tipo", value_name="Valor")
         
-        # Base do gráfico (Sem linhas de grade com grid=False)
         base_balanco = alt.Chart(resumo_melted).encode(
             x=alt.X('Mes_Ano:N', title='Mês', axis=alt.Axis(labelAngle=0, labelColor='white', titleColor='white', grid=False)),
-            y=alt.Y('Valor:Q', title='Valor (R$)', axis=alt.Axis(labelColor='white', titleColor='white', grid=False, labels=False)), # Esconde os números do eixo Y para ficar mais limpo
+            y=alt.Y('Valor:Q', title='Valor (R$)', axis=alt.Axis(labelColor='white', titleColor='white', grid=False, labels=False)),
             color=alt.Color('Tipo:N', scale=alt.Scale(domain=['Entrada', 'Saída', 'Diferença'], range=['#10B981', '#EF4444', '#3B82F6']), legend=alt.Legend(labelColor='white', titleColor='white')),
             xOffset='Tipo:N',
             tooltip=['Mes_Ano', 'Tipo', 'Valor']
         )
         
-        # Camada de barras + Camada de Textos
         barras_balanco = base_balanco.mark_bar()
         textos_balanco = base_balanco.mark_text(align='center', baseline='bottom', dy=-5, color='white', fontWeight='bold').encode(
             text=alt.Text('Valor:Q', format='.2f')
@@ -290,7 +376,7 @@ with aba_relatorios:
             
             base_contas = alt.Chart(evolucao_contas).encode(
                 x=alt.X('Mes_Ano:N', title='Mês', axis=alt.Axis(labelAngle=0, labelColor='white', titleColor='white', grid=False)),
-                y=alt.Y('Valor:Q', title='Gasto (R$)', axis=alt.Axis(labelColor='white', titleColor='white', grid=False, labels=False)), # Esconde eixo Y
+                y=alt.Y('Valor:Q', title='Gasto (R$)', axis=alt.Axis(labelColor='white', titleColor='white', grid=False, labels=False)), 
                 color=alt.Color('Conta_Origem:N', legend=alt.Legend(labelColor='white', titleColor='white')),
                 xOffset='Conta_Origem:N',
                 tooltip=['Mes_Ano', 'Conta_Origem', 'Valor']
