@@ -152,10 +152,10 @@ aba_lancamentos, aba_relatorios = st.tabs(["📝 Lançamentos", "📊 Gráficos 
 # ABA 1: LANÇAMENTOS 
 # ------------------------------------------
 with aba_lancamentos:
-    if st.session_state["aba_usuario"] == "Transacao":
+    if st.session_state["aba_usuario"] == "Transacoes":
         lista_de_contas = ["Cartão de Crédito", "Dinheiro/Débito ou PIX"]
         lista_de_categorias = ["Água", "Cartão de Crédito", "Delivery", "Financiamento Casa", "Internet", "Lazer", "Luz", "Outros", "Salário", "Uber"]
-    elif st.session_state["aba_usuario"] == "Transacao_1":
+    elif st.session_state["aba_usuario"] == "Transacoes_1":
         lista_de_contas = ["Cartão de Crédito", "Dinheiro/Débito ou PIX"]
         lista_de_categorias = ["Água", "Cartão de Crédito", "Delivery", "Financiamento Casa", "Internet", "Lazer", "Luz", "Outros", "Salário", "Uber"]
     else:
